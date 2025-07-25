@@ -1,6 +1,6 @@
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "5.16.0"
+  version = "6.0.1"
 
   name = "${var.name}-vpc"
 
@@ -52,7 +52,7 @@ module "vpc_endpoints" {
   count = var.vpc_endpoints_enabled ? 1 : 0
 
   source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
-  version = "5.16.0"
+  version = "6.0.1"
 
   vpc_id = module.vpc.vpc_id
 
@@ -135,7 +135,7 @@ module "bastion" {
   count = var.bastion_enabled ? 1 : 0
 
   source  = "terraform-aws-modules/ec2-instance/aws"
-  version = "5.7.1"
+  version = "6.0.2"
 
   name = "${var.name}-bastion"
 
@@ -203,9 +203,20 @@ resource "aws_iam_policy" "service" {
 
 module "service" {
   source  = "terraform-aws-modules/ec2-instance/aws"
-  version = "5.7.1"
+  version = "6.0.2"
 
   name = "${var.name}-service"
+
+  associate_public_ip_address = var.associate_public_ip_address
+
+  create_spot_instance                = var.create_spot_instance
+  spot_price                          = var.spot_price
+  spot_wait_for_fulfillment           = var.spot_wait_for_fulfillment
+  spot_type                           = var.spot_type
+  spot_launch_group                   = var.spot_launch_group
+  spot_instance_interruption_behavior = var.spot_instance_interruption_behavior
+  spot_valid_until                    = var.spot_valid_until
+  spot_valid_from                     = var.spot_valid_from
 
   ami_ssm_parameter      = var.ami_ssm_parameter
   ignore_ami_changes     = var.ignore_ami_changes
@@ -229,19 +240,17 @@ module "service" {
     EC2Policy                    = aws_iam_policy.service.arn
   }
 
-  root_block_device = [
-    {
-      encrypted   = true
-      volume_type = "gp3"
-      volume_size = var.root_volume_size
-      tags = merge(
-        var.tags,
-        {
-          Name = "${var.name}-service-root"
-        }
-      )
-    }
-  ]
+  root_block_device = {
+    encrypted = true
+    type      = "gp3"
+    size      = var.root_volume_size
+    tags = merge(
+      var.tags,
+      {
+        Name = "${var.name}-service-root"
+      }
+    )
+  }
 
   enable_volume_tags = false
 
