@@ -1,4 +1,6 @@
 module "vpc" {
+  count = var.vpc_enabled ? 1 : 0
+
   source  = "terraform-aws-modules/vpc/aws"
   version = "6.0.1"
 
@@ -17,6 +19,8 @@ module "vpc" {
 }
 
 data "aws_iam_policy_document" "generic_endpoint" {
+  count = (var.vpc_enabled && var.vpc_endpoints_enabled) ? 1 : 0
+
   statement {
     principals {
       type        = "*"
@@ -27,7 +31,7 @@ data "aws_iam_policy_document" "generic_endpoint" {
     condition {
       test     = "StringEquals"
       variable = "aws:SourceVpc"
-      values   = [module.vpc.vpc_id]
+      values   = [module.vpc[0].vpc_id]
     }
     effect = "Allow"
   }
@@ -42,19 +46,19 @@ data "aws_iam_policy_document" "generic_endpoint" {
     condition {
       test     = "StringNotEquals"
       variable = "aws:SourceVpc"
-      values   = [module.vpc.vpc_id]
+      values   = [module.vpc[0].vpc_id]
     }
     effect = "Deny"
   }
 }
 
 module "vpc_endpoints" {
-  count = var.vpc_endpoints_enabled ? 1 : 0
+  count = (var.vpc_enabled && var.vpc_endpoints_enabled) ? 1 : 0
 
   source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
   version = "6.0.1"
 
-  vpc_id = module.vpc.vpc_id
+  vpc_id = module.vpc[0].vpc_id
 
   endpoints = merge(
     {
@@ -62,10 +66,10 @@ module "vpc_endpoints" {
         service      = "s3"
         service_type = "Gateway"
         route_table_ids = flatten([
-          module.vpc.private_route_table_ids,
-          module.vpc.public_route_table_ids
+          module.vpc[0].private_route_table_ids,
+          module.vpc[0].public_route_table_ids
         ])
-        policy = data.aws_iam_policy_document.generic_endpoint.json
+        policy = data.aws_iam_policy_document.generic_endpoint[0].json
       }
     },
     {
@@ -79,7 +83,7 @@ module "vpc_endpoints" {
       replace(service, ".", "_") =>
       {
         service             = service
-        subnet_ids          = module.vpc.private_subnets
+        subnet_ids          = module.vpc[0].private_subnets
         private_dns_enabled = true
         dns_options = {
           private_dns_only_for_inbound_resolver_endpoint = false
@@ -96,8 +100,8 @@ module "vpc_endpoints" {
     ingress_https = {
       description = "HTTPS from subnets"
       cidr_blocks = flatten([
-        module.vpc.private_subnets_cidr_blocks,
-        module.vpc.public_subnets_cidr_blocks
+        module.vpc[0].private_subnets_cidr_blocks,
+        module.vpc[0].public_subnets_cidr_blocks
       ])
     }
   }
@@ -106,11 +110,13 @@ module "vpc_endpoints" {
 }
 
 module "sg" {
+  count = (var.vpc_enabled && var.sg_enabled) ? 1 : 0
+
   source  = "terraform-aws-modules/security-group/aws"
   version = "5.2.0"
 
   name   = "${var.name}-sg"
-  vpc_id = module.vpc.vpc_id
+  vpc_id = module.vpc[0].vpc_id
 
   ingress_cidr_blocks = var.ingress_cidr_blocks
   ingress_rules       = var.ingress_rules
@@ -132,7 +138,7 @@ module "key_pair" {
 }
 
 module "bastion" {
-  count = var.bastion_enabled ? 1 : 0
+  count = (var.vpc_enabled && var.bastion_enabled) ? 1 : 0
 
   source  = "terraform-aws-modules/ec2-instance/aws"
   version = "6.0.2"
@@ -144,9 +150,9 @@ module "bastion" {
   instance_type          = var.instance_type
   monitoring             = var.enable_monitoring
   metadata_options       = var.metadata_options
-  vpc_security_group_ids = [module.sg.security_group_id]
-  subnet_id              = module.vpc.public_subnets[0]
-  private_ip             = try(var.bastion_private_ip, cidrhost(module.vpc.private_subnets_cidr_blocks[0], 22))
+  vpc_security_group_ids = [module.sg[0].security_group_id]
+  subnet_id              = module.vpc[0].public_subnets[0]
+  private_ip             = try(var.bastion_private_ip, cidrhost(module.vpc[0].private_subnets_cidr_blocks[0], 22))
   key_name               = var.keypair_enabled ? module.key_pair[0].key_pair_name : null
 
   create_eip                  = true
@@ -170,6 +176,8 @@ module "bastion" {
 }
 
 resource "aws_iam_policy" "service" {
+  count = var.service_enabled ? 1 : 0
+
   name        = "${var.name}-service"
   description = "Policy for ${var.name}-service instance with EC2 permissions"
   policy = jsonencode({
@@ -202,6 +210,8 @@ resource "aws_iam_policy" "service" {
 }
 
 module "service" {
+  count = var.service_enabled ? 1 : 0
+
   source  = "terraform-aws-modules/ec2-instance/aws"
   version = "6.0.2"
 
@@ -223,11 +233,11 @@ module "service" {
   instance_type          = var.instance_type
   monitoring             = var.enable_monitoring
   metadata_options       = var.metadata_options
-  vpc_security_group_ids = [module.sg.security_group_id]
-  subnet_id              = var.bastion_enabled ? module.vpc.private_subnets[0] : module.vpc.public_subnets[0]
+  vpc_security_group_ids = [module.sg[0].security_group_id]
+  subnet_id              = var.bastion_enabled ? module.vpc[0].private_subnets[0] : module.vpc[0].public_subnets[0]
   private_ip = try(var.service_private_ip,
     var.bastion_enabled ?
-    cidrhost(module.vpc.private_subnets_cidr_blocks[0], 22) : cidrhost(module.vpc.public_subnets_cidr_blocks[0], 22)
+    cidrhost(module.vpc[0].private_subnets_cidr_blocks[0], 22) : cidrhost(module.vpc[0].public_subnets_cidr_blocks[0], 22)
   )
   key_name = var.keypair_enabled ? module.key_pair[0].key_pair_name : null
 
@@ -237,7 +247,7 @@ module "service" {
   iam_role_policies = {
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
     CloudWatchAgentServerPolicy  = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-    EC2Policy                    = aws_iam_policy.service.arn
+    EC2Policy                    = aws_iam_policy.service[0].arn
   }
 
   root_block_device = {

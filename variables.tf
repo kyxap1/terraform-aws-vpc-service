@@ -108,6 +108,18 @@ variable "metadata_options" {
   }
 }
 
+variable "vpc_enabled" {
+  description = "Enable VPC"
+  type        = bool
+  default     = true
+}
+
+variable "vpc_endpoints_enabled" {
+  description = "Enable VPC endpoints"
+  type        = bool
+  default     = false
+}
+
 variable "keypair_enabled" {
   description = "Flag to enable or disable the creation of a key pair for instances"
   type        = bool
@@ -120,10 +132,16 @@ variable "bastion_enabled" {
   default     = false
 }
 
-variable "vpc_endpoints_enabled" {
-  description = "Enable VPC endpoints"
+variable "sg_enabled" {
+  description = "Enable security group"
   type        = bool
-  default     = false
+  default     = true
+}
+
+variable "service_enabled" {
+  description = "Enable service instance"
+  type        = bool
+  default     = true
 }
 
 variable "bastion_private_ip" {

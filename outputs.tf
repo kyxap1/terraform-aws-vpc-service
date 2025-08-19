@@ -1,5 +1,5 @@
 output "public_ip" {
-  value = module.service.public_ip
+  value = try(module.service[0].public_ip, "")
 }
 
 output "private_key" {
